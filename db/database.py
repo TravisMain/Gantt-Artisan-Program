@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime
 
 class Database:
     def __init__(self, db_path="gantt.db"):
@@ -91,9 +92,64 @@ class Database:
         """)
         self.conn.commit()
 
-    # Artisan CRUD Methods
+    # Validation Methods
+    def validate_date(self, date_str):
+        """Check if a date string is valid (YYYY-MM-DD format)."""
+        try:
+            datetime.strptime(date_str, "%Y-%m-%d")
+            return True
+        except ValueError:
+            return False
+
+    def check_date_order(self, start_date, end_date):
+        """Ensure start_date is not after end_date."""
+        if not (self.validate_date(start_date) and self.validate_date(end_date)):
+            return False
+        return datetime.strptime(start_date, "%Y-%m-%d") <= datetime.strptime(end_date, "%Y-%m-%d")
+
+    def check_hours_per_day(self, hours_per_day):
+        """Ensure hours_per_day is between 1 and 12."""
+        return isinstance(hours_per_day, (int, float)) and 1 <= hours_per_day <= 12
+
+    def check_assignment_overlap(self, artisan_id, start_date, end_date, assignment_id=None):
+        """Check if an assignment overlaps with existing assignments for the same artisan."""
+        if not (self.validate_date(start_date) and self.validate_date(end_date)):
+            return True  # Invalid dates count as an overlap to block insertion
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+        query = """
+            SELECT id FROM assignments
+            WHERE artisan_id = ? AND (
+                (start_date < ? AND end_date > ?) OR
+                (start_date < ? AND end_date > ?) OR
+                (start_date >= ? AND end_date <= ?)
+            )
+        """
+        params = (artisan_id, end_date, start_date, end_date, start_date, start_date, end_date)
+        if assignment_id:
+            query += " AND id != ?"
+            params += (assignment_id,)
+        overlaps = self.cursor.execute(query, params).fetchall()
+        return bool(overlaps)
+
+    def validate_assignment(self, artisan_id, project_id, start_date, end_date, hours_per_day, assignment_id=None):
+        """Validate an assignment before adding or updating."""
+        # Check if artisan and project exist
+        if not self.cursor.execute("SELECT id FROM artisans WHERE id = ?", (artisan_id,)).fetchone():
+            raise ValueError(f"Artisan ID {artisan_id} does not exist")
+        if not self.cursor.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone():
+            raise ValueError(f"Project ID {project_id} does not exist")
+        # Validate dates, hours, and overlap
+        if not self.check_date_order(start_date, end_date):
+            raise ValueError("Start date must be before or equal to end date")
+        if not self.check_hours_per_day(hours_per_day):
+            raise ValueError("Hours per day must be between 1 and 12")
+        if self.check_assignment_overlap(artisan_id, start_date, end_date, assignment_id):
+            raise ValueError("Assignment overlaps with an existing assignment for this artisan")
+        return True
+
+    # Artisan CRUD Methods (unchanged)
     def add_artisan(self, name, team_id, skill, availability, hourly_rate, contact_email, contact_phone):
-        """Add a new artisan to the database."""
         try:
             self.cursor.execute("""
                 INSERT INTO artisans (name, team_id, skill, availability, hourly_rate, contact_email, contact_phone)
@@ -105,11 +161,9 @@ class Database:
             raise ValueError(f"Failed to add artisan {name}: {e}")
 
     def get_artisans(self):
-        """Retrieve all artisans."""
         return self.cursor.execute("SELECT * FROM artisans").fetchall()
 
     def update_artisan(self, artisan_id, name=None, team_id=None, skill=None, availability=None, hourly_rate=None, contact_email=None, contact_phone=None):
-        """Update an existing artisan."""
         current = self.cursor.execute("SELECT * FROM artisans WHERE id = ?", (artisan_id,)).fetchone()
         if not current:
             raise ValueError(f"Artisan with ID {artisan_id} not found")
@@ -133,15 +187,13 @@ class Database:
             raise ValueError(f"Failed to update artisan {artisan_id}: {e}")
 
     def delete_artisan(self, artisan_id):
-        """Delete an artisan by ID."""
         self.cursor.execute("DELETE FROM artisans WHERE id = ?", (artisan_id,))
         if self.cursor.rowcount == 0:
             raise ValueError(f"Artisan with ID {artisan_id} not found")
         self.conn.commit()
 
-    # Team CRUD Methods
+    # Team CRUD Methods (unchanged)
     def add_team(self, name, description, manager_id):
-        """Add a new team."""
         try:
             self.cursor.execute("INSERT INTO teams (name, description, manager_id) VALUES (?, ?, ?)", (name, description, manager_id))
             self.conn.commit()
@@ -150,11 +202,9 @@ class Database:
             raise ValueError(f"Failed to add team {name}: {e}")
 
     def get_teams(self):
-        """Retrieve all teams."""
         return self.cursor.execute("SELECT * FROM teams").fetchall()
 
     def update_team(self, team_id, name=None, description=None, manager_id=None):
-        """Update an existing team."""
         current = self.cursor.execute("SELECT * FROM teams WHERE id = ?", (team_id,)).fetchone()
         if not current:
             raise ValueError(f"Team with ID {team_id} not found")
@@ -171,15 +221,13 @@ class Database:
             raise ValueError(f"Failed to update team {team_id}: {e}")
 
     def delete_team(self, team_id):
-        """Delete a team by ID."""
         self.cursor.execute("DELETE FROM teams WHERE id = ?", (team_id,))
         if self.cursor.rowcount == 0:
             raise ValueError(f"Team with ID {team_id} not found")
         self.conn.commit()
 
-    # Project CRUD Methods
+    # Project CRUD Methods (unchanged)
     def add_project(self, name, start_date, end_date, status, budget):
-        """Add a new project."""
         try:
             self.cursor.execute("INSERT INTO projects (name, start_date, end_date, status, budget) VALUES (?, ?, ?, ?, ?)",
                                (name, start_date, end_date, status, budget))
@@ -189,11 +237,9 @@ class Database:
             raise ValueError(f"Failed to add project {name}: {e}")
 
     def get_projects(self):
-        """Retrieve all projects."""
         return self.cursor.execute("SELECT * FROM projects").fetchall()
 
     def update_project(self, project_id, name=None, start_date=None, end_date=None, status=None, budget=None):
-        """Update an existing project."""
         current = self.cursor.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         if not current:
             raise ValueError(f"Project with ID {project_id} not found")
@@ -212,15 +258,15 @@ class Database:
             raise ValueError(f"Failed to update project {project_id}: {e}")
 
     def delete_project(self, project_id):
-        """Delete a project by ID."""
         self.cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
         if self.cursor.rowcount == 0:
             raise ValueError(f"Project with ID {project_id} not found")
         self.conn.commit()
 
-    # Assignment CRUD Methods
+    # Assignment CRUD Methods (modified to include validation)
     def add_assignment(self, artisan_id, project_id, start_date, end_date, hours_per_day, completed_hours=0, notes=None, status="Planned", priority=0):
-        """Add a new assignment."""
+        """Add a new assignment with validation."""
+        self.validate_assignment(artisan_id, project_id, start_date, end_date, hours_per_day)
         try:
             self.cursor.execute("""
                 INSERT INTO assignments (artisan_id, project_id, start_date, end_date, hours_per_day, completed_hours, notes, status, priority)
@@ -237,7 +283,7 @@ class Database:
 
     def update_assignment(self, assignment_id, artisan_id=None, project_id=None, start_date=None, end_date=None, hours_per_day=None,
                          completed_hours=None, notes=None, status=None, priority=None):
-        """Update an existing assignment."""
+        """Update an existing assignment with validation."""
         current = self.cursor.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
         if not current:
             raise ValueError(f"Assignment with ID {assignment_id} not found")
@@ -252,6 +298,8 @@ class Database:
             "status": status if status is not None else current[8],
             "priority": priority if priority is not None else current[9]
         }
+        self.validate_assignment(updates["artisan_id"], updates["project_id"], updates["start_date"],
+                                updates["end_date"], updates["hours_per_day"], assignment_id)
         try:
             self.cursor.execute("""
                 UPDATE assignments SET artisan_id = ?, project_id = ?, start_date = ?, end_date = ?, hours_per_day = ?,
@@ -270,9 +318,8 @@ class Database:
             raise ValueError(f"Assignment with ID {assignment_id} not found")
         self.conn.commit()
 
-    # User CRUD Methods (basic, expanded later for authentication)
+    # User CRUD Methods (unchanged)
     def add_user(self, username, password_hash, role):
-        """Add a new user."""
         try:
             self.cursor.execute("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)", (username, password_hash, role))
             self.conn.commit()
@@ -281,7 +328,6 @@ class Database:
             raise ValueError(f"Failed to add user {username}: {e}")
 
     def get_users(self):
-        """Retrieve all users."""
         return self.cursor.execute("SELECT * FROM users").fetchall()
 
     def close(self):
