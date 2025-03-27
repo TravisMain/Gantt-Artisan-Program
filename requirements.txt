@@ -1,0 +1,4 @@
+PyQt6==6.5.0      # GUI framework for the desktop application
+bcrypt==4.0.1     # Password hashing for secure authentication
+pyinstaller==5.13.0  # Tool to package the app into an executable
+pytest==7.4.0     # Testing framework for unit tests
