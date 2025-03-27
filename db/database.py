@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import datetime
+import bcrypt
 
 class Database:
     def __init__(self, db_path="gantt.db"):
@@ -92,9 +93,8 @@ class Database:
         """)
         self.conn.commit()
 
-    # Validation Methods
+    # Validation Methods (unchanged)
     def validate_date(self, date_str):
-        """Check if a date string is valid (YYYY-MM-DD format)."""
         try:
             datetime.strptime(date_str, "%Y-%m-%d")
             return True
@@ -102,19 +102,16 @@ class Database:
             return False
 
     def check_date_order(self, start_date, end_date):
-        """Ensure start_date is not after end_date."""
         if not (self.validate_date(start_date) and self.validate_date(end_date)):
             return False
         return datetime.strptime(start_date, "%Y-%m-%d") <= datetime.strptime(end_date, "%Y-%m-%d")
 
     def check_hours_per_day(self, hours_per_day):
-        """Ensure hours_per_day is between 1 and 12."""
         return isinstance(hours_per_day, (int, float)) and 1 <= hours_per_day <= 12
 
     def check_assignment_overlap(self, artisan_id, start_date, end_date, assignment_id=None):
-        """Check if an assignment overlaps with existing assignments for the same artisan."""
         if not (self.validate_date(start_date) and self.validate_date(end_date)):
-            return True  # Invalid dates count as an overlap to block insertion
+            return True
         start = datetime.strptime(start_date, "%Y-%m-%d")
         end = datetime.strptime(end_date, "%Y-%m-%d")
         query = """
@@ -133,13 +130,10 @@ class Database:
         return bool(overlaps)
 
     def validate_assignment(self, artisan_id, project_id, start_date, end_date, hours_per_day, assignment_id=None):
-        """Validate an assignment before adding or updating."""
-        # Check if artisan and project exist
         if not self.cursor.execute("SELECT id FROM artisans WHERE id = ?", (artisan_id,)).fetchone():
             raise ValueError(f"Artisan ID {artisan_id} does not exist")
         if not self.cursor.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone():
             raise ValueError(f"Project ID {project_id} does not exist")
-        # Validate dates, hours, and overlap
         if not self.check_date_order(start_date, end_date):
             raise ValueError("Start date must be before or equal to end date")
         if not self.check_hours_per_day(hours_per_day):
@@ -147,6 +141,33 @@ class Database:
         if self.check_assignment_overlap(artisan_id, start_date, end_date, assignment_id):
             raise ValueError("Assignment overlaps with an existing assignment for this artisan")
         return True
+
+    # Authentication Methods
+    def validate_password(self, password):
+        """Enforce password policy: minimum 8 characters."""
+        if not isinstance(password, str) or len(password) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        return True
+
+    def hash_password(self, password):
+        """Hash a password using bcrypt."""
+        self.validate_password(password)
+        return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+    def verify_password(self, password, password_hash):
+        """Verify a password against its hash."""
+        return bcrypt.checkpw(password.encode('utf-8'), password_hash)
+
+    def login_user(self, username, password):
+        """Authenticate a user and update last_login."""
+        user = self.cursor.execute("SELECT id, password_hash, role FROM users WHERE username = ?", (username,)).fetchone()
+        if not user or not self.verify_password(password, user[1]):
+            raise ValueError("Invalid username or password")
+        # Update last_login
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.cursor.execute("UPDATE users SET last_login = ? WHERE id = ?", (current_time, user[0]))
+        self.conn.commit()
+        return {"user_id": user[0], "role": user[2], "last_login": current_time}
 
     # Artisan CRUD Methods (unchanged)
     def add_artisan(self, name, team_id, skill, availability, hourly_rate, contact_email, contact_phone):
@@ -263,9 +284,8 @@ class Database:
             raise ValueError(f"Project with ID {project_id} not found")
         self.conn.commit()
 
-    # Assignment CRUD Methods (modified to include validation)
+    # Assignment CRUD Methods (unchanged)
     def add_assignment(self, artisan_id, project_id, start_date, end_date, hours_per_day, completed_hours=0, notes=None, status="Planned", priority=0):
-        """Add a new assignment with validation."""
         self.validate_assignment(artisan_id, project_id, start_date, end_date, hours_per_day)
         try:
             self.cursor.execute("""
@@ -278,12 +298,10 @@ class Database:
             raise ValueError(f"Failed to add assignment: {e}")
 
     def get_assignments(self):
-        """Retrieve all assignments."""
         return self.cursor.execute("SELECT * FROM assignments").fetchall()
 
     def update_assignment(self, assignment_id, artisan_id=None, project_id=None, start_date=None, end_date=None, hours_per_day=None,
                          completed_hours=None, notes=None, status=None, priority=None):
-        """Update an existing assignment with validation."""
         current = self.cursor.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
         if not current:
             raise ValueError(f"Assignment with ID {assignment_id} not found")
@@ -312,23 +330,51 @@ class Database:
             raise ValueError(f"Failed to update assignment {assignment_id}: {e}")
 
     def delete_assignment(self, assignment_id):
-        """Delete an assignment by ID."""
         self.cursor.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
         if self.cursor.rowcount == 0:
             raise ValueError(f"Assignment with ID {assignment_id} not found")
         self.conn.commit()
 
-    # User CRUD Methods (unchanged)
-    def add_user(self, username, password_hash, role):
+    # User CRUD Methods (enhanced for authentication)
+    def add_user(self, username, password, role):
+        """Add a new user with hashed password."""
+        password_hash = self.hash_password(password)
         try:
-            self.cursor.execute("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)", (username, password_hash, role))
+            self.cursor.execute("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+                               (username, password_hash, role))
             self.conn.commit()
             return self.cursor.lastrowid
         except sqlite3.IntegrityError as e:
             raise ValueError(f"Failed to add user {username}: {e}")
 
     def get_users(self):
+        """Retrieve all users."""
         return self.cursor.execute("SELECT * FROM users").fetchall()
+
+    def update_user(self, user_id, username=None, password=None, role=None):
+        """Update an existing user, including password if provided."""
+        current = self.cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not current:
+            raise ValueError(f"User with ID {user_id} not found")
+        updates = {
+            "username": username if username is not None else current[1],
+            "password_hash": self.hash_password(password) if password else current[2],
+            "role": role if role is not None else current[3],
+            "last_login": current[4]  # Preserve last_login unless explicitly updated elsewhere
+        }
+        try:
+            self.cursor.execute("UPDATE users SET username = ?, password_hash = ?, role = ?, last_login = ? WHERE id = ?",
+                               (updates["username"], updates["password_hash"], updates["role"], updates["last_login"], user_id))
+            self.conn.commit()
+        except sqlite3.IntegrityError as e:
+            raise ValueError(f"Failed to update user {user_id}: {e}")
+
+    def delete_user(self, user_id):
+        """Delete a user by ID."""
+        self.cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        if self.cursor.rowcount == 0:
+            raise ValueError(f"User with ID {user_id} not found")
+        self.conn.commit()
 
     def close(self):
         """Close the database connection."""
