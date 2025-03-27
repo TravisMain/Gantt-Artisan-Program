@@ -142,49 +142,61 @@ class Database:
             raise ValueError("Assignment overlaps with an existing assignment for this artisan")
         return True
 
-    # Authentication Methods
+    # Authentication Methods (unchanged)
     def validate_password(self, password):
-        """Enforce password policy: minimum 8 characters."""
         if not isinstance(password, str) or len(password) < 8:
             raise ValueError("Password must be at least 8 characters long")
         return True
 
     def hash_password(self, password):
-        """Hash a password using bcrypt."""
         self.validate_password(password)
         return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 
     def verify_password(self, password, password_hash):
-        """Verify a password against its hash."""
         return bcrypt.checkpw(password.encode('utf-8'), password_hash)
 
     def login_user(self, username, password):
-        """Authenticate a user and update last_login."""
         user = self.cursor.execute("SELECT id, password_hash, role FROM users WHERE username = ?", (username,)).fetchone()
         if not user or not self.verify_password(password, user[1]):
             raise ValueError("Invalid username or password")
-        # Update last_login
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.cursor.execute("UPDATE users SET last_login = ? WHERE id = ?", (current_time, user[0]))
         self.conn.commit()
+        self.add_audit_log(user[0], "Login", f"User {username} logged in")
         return {"user_id": user[0], "role": user[2], "last_login": current_time}
 
-    # Artisan CRUD Methods (unchanged)
-    def add_artisan(self, name, team_id, skill, availability, hourly_rate, contact_email, contact_phone):
+    # Audit Logging Method
+    def add_audit_log(self, user_id, action, details=None):
+        """Log an action to the audit_log table."""
+        try:
+            self.cursor.execute("INSERT INTO audit_log (user_id, action, details) VALUES (?, ?, ?)",
+                               (user_id, action, details))
+            self.conn.commit()
+        except sqlite3.IntegrityError as e:
+            raise ValueError(f"Failed to log audit entry: {e}")
+
+    def get_audit_logs(self):
+        """Retrieve all audit logs."""
+        return self.cursor.execute("SELECT * FROM audit_log").fetchall()
+
+    # Artisan CRUD Methods (with audit logging)
+    def add_artisan(self, user_id, name, team_id, skill, availability, hourly_rate, contact_email, contact_phone):
         try:
             self.cursor.execute("""
                 INSERT INTO artisans (name, team_id, skill, availability, hourly_rate, contact_email, contact_phone)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (name, team_id, skill, availability, hourly_rate, contact_email, contact_phone))
             self.conn.commit()
-            return self.cursor.lastrowid
+            artisan_id = self.cursor.lastrowid
+            self.add_audit_log(user_id, "Add Artisan", f"Added artisan {name} with ID {artisan_id}")
+            return artisan_id
         except sqlite3.IntegrityError as e:
             raise ValueError(f"Failed to add artisan {name}: {e}")
 
     def get_artisans(self):
         return self.cursor.execute("SELECT * FROM artisans").fetchall()
 
-    def update_artisan(self, artisan_id, name=None, team_id=None, skill=None, availability=None, hourly_rate=None, contact_email=None, contact_phone=None):
+    def update_artisan(self, user_id, artisan_id, name=None, team_id=None, skill=None, availability=None, hourly_rate=None, contact_email=None, contact_phone=None):
         current = self.cursor.execute("SELECT * FROM artisans WHERE id = ?", (artisan_id,)).fetchone()
         if not current:
             raise ValueError(f"Artisan with ID {artisan_id} not found")
@@ -204,28 +216,32 @@ class Database:
             """, (updates["name"], updates["team_id"], updates["skill"], updates["availability"], updates["hourly_rate"],
                   updates["contact_email"], updates["contact_phone"], artisan_id))
             self.conn.commit()
+            self.add_audit_log(user_id, "Update Artisan", f"Updated artisan ID {artisan_id}")
         except sqlite3.IntegrityError as e:
             raise ValueError(f"Failed to update artisan {artisan_id}: {e}")
 
-    def delete_artisan(self, artisan_id):
+    def delete_artisan(self, user_id, artisan_id):
         self.cursor.execute("DELETE FROM artisans WHERE id = ?", (artisan_id,))
         if self.cursor.rowcount == 0:
             raise ValueError(f"Artisan with ID {artisan_id} not found")
         self.conn.commit()
+        self.add_audit_log(user_id, "Delete Artisan", f"Deleted artisan ID {artisan_id}")
 
-    # Team CRUD Methods (unchanged)
-    def add_team(self, name, description, manager_id):
+    # Team CRUD Methods (with audit logging)
+    def add_team(self, user_id, name, description, manager_id):
         try:
             self.cursor.execute("INSERT INTO teams (name, description, manager_id) VALUES (?, ?, ?)", (name, description, manager_id))
             self.conn.commit()
-            return self.cursor.lastrowid
+            team_id = self.cursor.lastrowid
+            self.add_audit_log(user_id, "Add Team", f"Added team {name} with ID {team_id}")
+            return team_id
         except sqlite3.IntegrityError as e:
             raise ValueError(f"Failed to add team {name}: {e}")
 
     def get_teams(self):
         return self.cursor.execute("SELECT * FROM teams").fetchall()
 
-    def update_team(self, team_id, name=None, description=None, manager_id=None):
+    def update_team(self, user_id, team_id, name=None, description=None, manager_id=None):
         current = self.cursor.execute("SELECT * FROM teams WHERE id = ?", (team_id,)).fetchone()
         if not current:
             raise ValueError(f"Team with ID {team_id} not found")
@@ -238,29 +254,33 @@ class Database:
             self.cursor.execute("UPDATE teams SET name = ?, description = ?, manager_id = ? WHERE id = ?",
                                (updates["name"], updates["description"], updates["manager_id"], team_id))
             self.conn.commit()
+            self.add_audit_log(user_id, "Update Team", f"Updated team ID {team_id}")
         except sqlite3.IntegrityError as e:
             raise ValueError(f"Failed to update team {team_id}: {e}")
 
-    def delete_team(self, team_id):
+    def delete_team(self, user_id, team_id):
         self.cursor.execute("DELETE FROM teams WHERE id = ?", (team_id,))
         if self.cursor.rowcount == 0:
             raise ValueError(f"Team with ID {team_id} not found")
         self.conn.commit()
+        self.add_audit_log(user_id, "Delete Team", f"Deleted team ID {team_id}")
 
-    # Project CRUD Methods (unchanged)
-    def add_project(self, name, start_date, end_date, status, budget):
+    # Project CRUD Methods (with audit logging)
+    def add_project(self, user_id, name, start_date, end_date, status, budget):
         try:
             self.cursor.execute("INSERT INTO projects (name, start_date, end_date, status, budget) VALUES (?, ?, ?, ?, ?)",
                                (name, start_date, end_date, status, budget))
             self.conn.commit()
-            return self.cursor.lastrowid
+            project_id = self.cursor.lastrowid
+            self.add_audit_log(user_id, "Add Project", f"Added project {name} with ID {project_id}")
+            return project_id
         except sqlite3.IntegrityError as e:
             raise ValueError(f"Failed to add project {name}: {e}")
 
     def get_projects(self):
         return self.cursor.execute("SELECT * FROM projects").fetchall()
 
-    def update_project(self, project_id, name=None, start_date=None, end_date=None, status=None, budget=None):
+    def update_project(self, user_id, project_id, name=None, start_date=None, end_date=None, status=None, budget=None):
         current = self.cursor.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         if not current:
             raise ValueError(f"Project with ID {project_id} not found")
@@ -275,17 +295,19 @@ class Database:
             self.cursor.execute("UPDATE projects SET name = ?, start_date = ?, end_date = ?, status = ?, budget = ? WHERE id = ?",
                                (updates["name"], updates["start_date"], updates["end_date"], updates["status"], updates["budget"], project_id))
             self.conn.commit()
+            self.add_audit_log(user_id, "Update Project", f"Updated project ID {project_id}")
         except sqlite3.IntegrityError as e:
             raise ValueError(f"Failed to update project {project_id}: {e}")
 
-    def delete_project(self, project_id):
+    def delete_project(self, user_id, project_id):
         self.cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
         if self.cursor.rowcount == 0:
             raise ValueError(f"Project with ID {project_id} not found")
         self.conn.commit()
+        self.add_audit_log(user_id, "Delete Project", f"Deleted project ID {project_id}")
 
-    # Assignment CRUD Methods (unchanged)
-    def add_assignment(self, artisan_id, project_id, start_date, end_date, hours_per_day, completed_hours=0, notes=None, status="Planned", priority=0):
+    # Assignment CRUD Methods (with audit logging)
+    def add_assignment(self, user_id, artisan_id, project_id, start_date, end_date, hours_per_day, completed_hours=0, notes=None, status="Planned", priority=0):
         self.validate_assignment(artisan_id, project_id, start_date, end_date, hours_per_day)
         try:
             self.cursor.execute("""
@@ -293,14 +315,16 @@ class Database:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (artisan_id, project_id, start_date, end_date, hours_per_day, completed_hours, notes, status, priority))
             self.conn.commit()
-            return self.cursor.lastrowid
+            assignment_id = self.cursor.lastrowid
+            self.add_audit_log(user_id, "Add Assignment", f"Added assignment ID {assignment_id} for artisan {artisan_id}")
+            return assignment_id
         except sqlite3.IntegrityError as e:
             raise ValueError(f"Failed to add assignment: {e}")
 
     def get_assignments(self):
         return self.cursor.execute("SELECT * FROM assignments").fetchall()
 
-    def update_assignment(self, assignment_id, artisan_id=None, project_id=None, start_date=None, end_date=None, hours_per_day=None,
+    def update_assignment(self, user_id, assignment_id, artisan_id=None, project_id=None, start_date=None, end_date=None, hours_per_day=None,
                          completed_hours=None, notes=None, status=None, priority=None):
         current = self.cursor.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
         if not current:
@@ -326,55 +350,57 @@ class Database:
                   updates["hours_per_day"], updates["completed_hours"], updates["notes"], updates["status"],
                   updates["priority"], assignment_id))
             self.conn.commit()
+            self.add_audit_log(user_id, "Update Assignment", f"Updated assignment ID {assignment_id}")
         except sqlite3.IntegrityError as e:
             raise ValueError(f"Failed to update assignment {assignment_id}: {e}")
 
-    def delete_assignment(self, assignment_id):
+    def delete_assignment(self, user_id, assignment_id):
         self.cursor.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
         if self.cursor.rowcount == 0:
             raise ValueError(f"Assignment with ID {assignment_id} not found")
         self.conn.commit()
+        self.add_audit_log(user_id, "Delete Assignment", f"Deleted assignment ID {assignment_id}")
 
-    # User CRUD Methods (enhanced for authentication)
-    def add_user(self, username, password, role):
-        """Add a new user with hashed password."""
+    # User CRUD Methods (with audit logging)
+    def add_user(self, user_id, username, password, role):
         password_hash = self.hash_password(password)
         try:
             self.cursor.execute("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
                                (username, password_hash, role))
             self.conn.commit()
-            return self.cursor.lastrowid
+            new_user_id = self.cursor.lastrowid
+            self.add_audit_log(user_id, "Add User", f"Added user {username} with ID {new_user_id}")
+            return new_user_id
         except sqlite3.IntegrityError as e:
             raise ValueError(f"Failed to add user {username}: {e}")
 
     def get_users(self):
-        """Retrieve all users."""
         return self.cursor.execute("SELECT * FROM users").fetchall()
 
-    def update_user(self, user_id, username=None, password=None, role=None):
-        """Update an existing user, including password if provided."""
-        current = self.cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    def update_user(self, user_id, target_user_id, username=None, password=None, role=None):
+        current = self.cursor.execute("SELECT * FROM users WHERE id = ?", (target_user_id,)).fetchone()
         if not current:
-            raise ValueError(f"User with ID {user_id} not found")
+            raise ValueError(f"User with ID {target_user_id} not found")
         updates = {
             "username": username if username is not None else current[1],
             "password_hash": self.hash_password(password) if password else current[2],
             "role": role if role is not None else current[3],
-            "last_login": current[4]  # Preserve last_login unless explicitly updated elsewhere
+            "last_login": current[4]
         }
         try:
             self.cursor.execute("UPDATE users SET username = ?, password_hash = ?, role = ?, last_login = ? WHERE id = ?",
-                               (updates["username"], updates["password_hash"], updates["role"], updates["last_login"], user_id))
+                               (updates["username"], updates["password_hash"], updates["role"], updates["last_login"], target_user_id))
             self.conn.commit()
+            self.add_audit_log(user_id, "Update User", f"Updated user ID {target_user_id}")
         except sqlite3.IntegrityError as e:
-            raise ValueError(f"Failed to update user {user_id}: {e}")
+            raise ValueError(f"Failed to update user {target_user_id}: {e}")
 
-    def delete_user(self, user_id):
-        """Delete a user by ID."""
-        self.cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    def delete_user(self, user_id, target_user_id):
+        self.cursor.execute("DELETE FROM users WHERE id = ?", (target_user_id,))
         if self.cursor.rowcount == 0:
-            raise ValueError(f"User with ID {user_id} not found")
+            raise ValueError(f"User with ID {target_user_id} not found")
         self.conn.commit()
+        self.add_audit_log(user_id, "Delete User", f"Deleted user ID {target_user_id}")
 
     def close(self):
         """Close the database connection."""
