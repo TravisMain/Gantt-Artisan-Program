@@ -17,3 +17,4 @@ env/
 # Ignore logs and temporary files
 gantt.log
 *.log
+/gantt.db
