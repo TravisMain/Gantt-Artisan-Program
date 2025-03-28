@@ -8,13 +8,6 @@ from db.database import Database
 from ui.styles.stylesheet import STYLESHEET
 from ui.tabs.dashboard import DashboardTab
 from ui.tabs.calendar import CalendarTab
-from ui.tabs.projects import ProjectsTab
-from ui.tabs.artisans import ArtisansTab
-from ui.tabs.reports import ReportsTab
-from ui.tabs.timesheets import TimesheetsTab
-from ui.tabs.documents import DocumentsTab
-from ui.tabs.goals import GoalsTab
-from ui.tabs.feedback import FeedbackTab
 from datetime import datetime, timedelta
 
 class AddItemDialog(QDialog):
@@ -235,8 +228,9 @@ class MainWindow(QMainWindow):
                     )
                     QMessageBox.information(self, "Success", f"Project {data['name']} added with ID {project_id}")
                 self.load_artisans_in_sidebar(QTreeWidgetItem(self.artisans_tree, ["👥 Artisans"]))
-                if self.current_tab:
-                    self.current_tab.load_gantt_data()
+                # Refresh the current tab if it has a refresh method
+                if self.current_tab and hasattr(self.current_tab, 'refresh'):
+                    self.current_tab.refresh()
             except ValueError as e:
                 QMessageBox.critical(self, "Error", str(e))
 
@@ -300,20 +294,13 @@ class MainWindow(QMainWindow):
             self.current_tab = DashboardTab(self.db, self)
         elif section == "Calendar":
             self.current_tab = CalendarTab(self.db, self)
-        elif section == "Projects":
-            self.current_tab = ProjectsTab(self.db, self)
-        elif section == "Artisans":
-            self.current_tab = ArtisansTab(self.db, self)
-        elif section == "Reports":
-            self.current_tab = ReportsTab(self.db, self)
-        elif section == "Timesheets":
-            self.current_tab = TimesheetsTab(self.db, self)
-        elif section == "Documents":
-            self.current_tab = DocumentsTab(self.db, self)
-        elif section == "Goals":
-            self.current_tab = GoalsTab(self.db, self)
-        elif section == "Feedback":
-            self.current_tab = FeedbackTab(self.db, self)
+        else:
+            # Placeholder for unimplemented tabs
+            self.current_tab = QWidget()
+            placeholder_label = QLabel(f"{section} Tab - Coming Soon")
+            placeholder_label.setStyleSheet("font-size: 18px; font-family: 'Roboto'; color: #2d3748; text-align: center;")
+            placeholder_layout = QVBoxLayout(self.current_tab)
+            placeholder_layout.addWidget(placeholder_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.content_layout.addWidget(self.current_tab)
 

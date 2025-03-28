@@ -376,6 +376,7 @@ class CalendarTab(QWidget):
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
+        self.parent = parent  # Store reference to MainWindow
         self.date_range = 42  # 6 weeks
         self.start_date = datetime.now()
         self.drag_data = None
@@ -477,13 +478,10 @@ class CalendarTab(QWidget):
 
         self.load_gantt_data()
 
+        # Gantt interactivity
         self.gantt_canvas.mpl_connect('button_press_event', self.on_press)
         self.gantt_canvas.mpl_connect('motion_notify_event', self.on_motion)
         self.gantt_canvas.mpl_connect('button_release_event', self.on_release)
-
-    def on_scroll(self, value):
-        self.scroll_offset = value // (self.block_height + self.row_gap)
-        self.update_gantt_chart(self.assignments, self.projects, self.artisans, self.teams)
 
     def contextMenuEvent(self, event):
         context_menu = QMenu(self)
@@ -552,6 +550,9 @@ class CalendarTab(QWidget):
             try:
                 self.db.update_assignment(assignment[0], start_date, end_date)
                 self.load_gantt_data()
+                # Refresh the parent (MainWindow) to update other tabs like Dashboard
+                if self.parent and hasattr(self.parent, 'navigate_to'):
+                    self.parent.navigate_to(self.parent.selected_tab)
             except ValueError as e:
                 QMessageBox.critical(self, "Error", str(e))
             self.selected_bar = None
@@ -559,8 +560,10 @@ class CalendarTab(QWidget):
         self.drag_data = None
 
     def edit_project(self, project_idx, assignment):
-        project_id = assignment[2]
+        project_id = assignment[2]  # project_id from the assignment
+        # Fetch the project details
         project = self.db.cursor.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        # Fetch the currently assigned artisans
         assigned_artisans = self.db.cursor.execute(
             "SELECT a.id, a.name FROM artisans a JOIN assignments ass ON a.id = ass.artisan_id WHERE ass.project_id = ?",
             (project_id,)
@@ -573,34 +576,49 @@ class CalendarTab(QWidget):
                     raise ValueError("Job name is required")
                 if not data["start_date"] or not data["end_date"]:
                     raise ValueError("Start date and end date are required")
+
+                # Validate date format
                 start_date = datetime.strptime(data["start_date"], "%Y-%m-%d")
                 end_date = datetime.strptime(data["end_date"], "%Y-%m-%d")
                 if end_date < start_date:
                     raise ValueError("End date must be after start date")
+
+                # Update project details
                 self.db.cursor.execute(
                     "UPDATE projects SET name = ?, start_date = ?, end_date = ?, job_number = ?, description = ? WHERE id = ?",
                     (data["job_name"], data["start_date"], data["end_date"], data["job_number"], data["description"], project_id)
                 )
+
+                # Update assignments: remove old assignments and add new ones
                 self.db.cursor.execute("DELETE FROM assignments WHERE project_id = ?", (project_id,))
                 for artisan_id in data["assigned_artisans"]:
                     self.db.add_assignment(artisan_id, project_id, data["start_date"], data["end_date"])
+
                 self.db.conn.commit()
                 QMessageBox.information(self, "Success", f"Project {data['job_name']} updated successfully")
                 self.load_gantt_data()
+                # Refresh the parent (MainWindow) to update other tabs like Dashboard
+                if self.parent and hasattr(self.parent, 'navigate_to'):
+                    self.parent.navigate_to(self.parent.selected_tab)
             except ValueError as e:
                 QMessageBox.critical(self, "Error", str(e))
 
     def delete_project(self, project_idx, assignment):
-        project_id = assignment[2]
+        project_id = assignment[2]  # project_id from the assignment
         project = self.db.cursor.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         reply = QMessageBox.question(self, "Confirm Delete", f"Are you sure you want to delete project '{project[1]}'?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
+            # Delete assignments associated with the project
             self.db.cursor.execute("DELETE FROM assignments WHERE project_id = ?", (project_id,))
+            # Delete the project
             self.db.cursor.execute("DELETE FROM projects WHERE id = ?", (project_id,))
             self.db.conn.commit()
             QMessageBox.information(self, "Success", f"Project '{project[1]}' deleted successfully")
             self.load_gantt_data()
+            # Refresh the parent (MainWindow) to update other tabs like Dashboard
+            if self.parent and hasattr(self.parent, 'navigate_to'):
+                self.parent.navigate_to(self.parent.selected_tab)
 
     def start_new_project(self, start_date):
         dialog = NewProjectDialog(self.db.get_artisans(), start_date.strftime("%Y-%m-%d"), self)
@@ -613,10 +631,13 @@ class CalendarTab(QWidget):
                     raise ValueError("At least one artisan must be assigned")
                 if not data["start_date"] or not data["end_date"]:
                     raise ValueError("Start date and end date are required")
+
+                # Validate date format
                 start_date = datetime.strptime(data["start_date"], "%Y-%m-%d")
                 end_date = datetime.strptime(data["end_date"], "%Y-%m-%d")
                 if end_date < start_date:
                     raise ValueError("End date must be after start date")
+
                 project_id = self.db.add_project(
                     name=data["job_name"],
                     start_date=data["start_date"],
@@ -625,44 +646,52 @@ class CalendarTab(QWidget):
                     job_number=data["job_number"],
                     description=data["description"]
                 )
+
                 artisan_ids = [data["artisan_id"]]
                 if data["additional_artisan_id"]:
                     artisan_ids.append(data["additional_artisan_id"])
+
                 team_id = None
                 if len(artisan_ids) > 1 and data["team_name"]:
                     team_name = data["team_name"]
                     team_id = self.db.add_team(team_name)
+
                 for artisan_id in artisan_ids:
                     self.db.add_assignment(artisan_id, project_id, data["start_date"], data["end_date"])
                     if team_id:
                         self.db.update_artisan_team(artisan_id, team_id)
+
                 QMessageBox.information(self, "Success", f"Project {data['job_name']} created with ID {project_id}")
                 self.load_gantt_data()
+                # Refresh the parent (MainWindow) to update other tabs like Dashboard
+                if self.parent and hasattr(self.parent, 'navigate_to'):
+                    self.parent.navigate_to(self.parent.selected_tab)
             except ValueError as e:
                 QMessageBox.critical(self, "Error", str(e))
 
     def load_gantt_data(self):
-        self.projects = [p for p in self.db.get_projects() if p[4] == "Active"]
-        self.assignments = self.db.get_assignments()
-        self.artisans = {a[0]: (a[1], a[5]) for a in self.db.get_artisans()}
-        self.teams = {t[0]: t[1] for t in self.db.cursor.execute("SELECT id, name FROM teams").fetchall()}
+        projects = self.db.get_projects()
+        projects = [p for p in projects if p[4] == "Active"]
+        assignments = self.db.get_assignments()
+        artisans = {a[0]: (a[1], a[5]) for a in self.db.get_artisans()}  # (name, profile_picture)
+        teams = {t[0]: t[1] for t in self.db.cursor.execute("SELECT id, name FROM teams").fetchall()}
         # Cache project assignments and team names
-        self.project_assignments = {p[0]: [a for a in self.assignments if a[2] == p[0]] for p in self.projects}
+        self.project_assignments = {p[0]: [a for a in assignments if a[2] == p[0]] for p in projects}
         self.team_names = {}
-        for p in self.projects:
+        for p in projects:
             project_id = p[0]
             team_id = self.db.cursor.execute(
                 "SELECT team_id FROM artisans WHERE id IN (SELECT artisan_id FROM assignments WHERE project_id = ?)",
                 (project_id,)
             ).fetchone()
-            self.team_names[project_id] = self.teams.get(team_id[0], "No Team Facetools") if team_id and team_id[0] else "No Team"
+            self.team_names[project_id] = teams.get(team_id[0], "No Team Facetools") if team_id and team_id[0] else "No Team"
         # Cache artisan images
-        for artisan_id, (name, picture_path) in self.artisans.items():
+        for artisan_id, (name, picture_path) in artisans.items():
             try:
                 self.artisan_images[artisan_id] = mpimg.imread(picture_path)
             except FileNotFoundError:
                 self.artisan_images[artisan_id] = None
-        self.update_gantt_chart(self.assignments, self.projects, self.artisans, self.teams)
+        self.update_gantt_chart(assignments, projects, artisans, teams)
 
     def update_gantt_chart(self, assignments, projects, artisans, teams):
         self.gantt_canvas.figure.clear()
@@ -675,7 +704,7 @@ class CalendarTab(QWidget):
 
         # Add month and year above the dates with reduced padding
         month_year = self.start_date.strftime("%B %Y")
-        ax.set_title(month_year, fontsize=12, pad=15, fontfamily='Roboto', fontweight='bold')  # Reduced pad from 30 to 15
+        ax.set_title(month_year, fontsize=12, pad=15, fontfamily='Roboto', fontweight='bold')
 
         # Define block dimensions
         self.block_height = 22
@@ -772,7 +801,7 @@ class CalendarTab(QWidget):
             team_name = self.team_names.get(project_id, "No Team")
             y_labels[visible_idx] = f"{project[1]}\n{team_name}: {', '.join(artisans_in_project)}"
         ax.set_yticks(visible_y_pos_centered)
-        ax.set_yticklabels(y_labels, fontsize=9, fontfamily='Roboto', fontweight='bold', va='center')  # Increased fontsize from 7 to 9
+        ax.set_yticklabels(y_labels, fontsize=9, fontfamily='Roboto', fontweight='bold', va='center')
 
         # Adjust the margins
         self.gantt_canvas.figure.subplots_adjust(left=0.25, bottom=0.2, top=0.92)
@@ -848,3 +877,11 @@ class CalendarTab(QWidget):
 
     def open_chatbot(self):
         QMessageBox.information(self, "Chatbot", "AI chatbot functionality is not yet implemented.")
+
+    def on_scroll(self, value):
+        self.scroll_offset = value // (self.block_height + self.row_gap)
+        self.update_gantt_chart(self.assignments, self.projects, self.artisans, self.teams)
+
+    def refresh(self):
+        """Refresh the calendar data."""
+        self.load_gantt_data()
