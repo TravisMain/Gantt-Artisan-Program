@@ -28,15 +28,14 @@ class MainWindow(QMainWindow):
         tabs = QTabWidget()
         main_layout.addWidget(tabs)
 
-        # Artisans tab
+        # Artisans tab (unchanged from Task 3.3)
         artisans_tab = QWidget()
         self.setup_artisans_tab(artisans_tab)
         tabs.addTab(artisans_tab, "Artisans")
 
-        # Projects tab (unchanged placeholder)
+        # Projects tab
         projects_tab = QWidget()
-        projects_layout = QVBoxLayout(projects_tab)
-        projects_layout.addWidget(QLabel("Projects management placeholder"))
+        self.setup_projects_tab(projects_tab)
         tabs.addTab(projects_tab, "Projects")
 
         # Assignments tab (unchanged placeholder)
@@ -97,21 +96,70 @@ class MainWindow(QMainWindow):
         else:
             layout.addWidget(QLabel("Viewing only - add functionality restricted to managers."))
 
+    def setup_projects_tab(self, tab):
+        """Set up the Projects tab with a table and add form."""
+        layout = QVBoxLayout(tab)
+
+        # Table to display projects
+        self.projects_table = QTableWidget()
+        self.projects_table.setColumnCount(5)
+        self.projects_table.setHorizontalHeaderLabels(["ID", "Name", "Start Date", "End Date", "Status"])
+        self.load_projects_data()
+        layout.addWidget(self.projects_table)
+
+        # Add project form (visible only to Construction Manager and Manager)
+        if self.user_info['role'] in ["Construction Manager", "Manager"]:
+            add_form_widget = QWidget()
+            add_form_layout = QFormLayout(add_form_widget)
+            
+            self.project_name_input = QLineEdit()
+            self.start_date_input = QLineEdit()
+            self.start_date_input.setPlaceholderText("YYYY-MM-DD")
+            self.end_date_input = QLineEdit()
+            self.end_date_input.setPlaceholderText("YYYY-MM-DD")
+            self.status_input = QLineEdit()
+            self.budget_input = QLineEdit()
+
+            add_form_layout.addRow("Name:", self.project_name_input)
+            add_form_layout.addRow("Start Date:", self.start_date_input)
+            add_form_layout.addRow("End Date:", self.end_date_input)
+            add_form_layout.addRow("Status:", self.status_input)
+            add_form_layout.addRow("Budget:", self.budget_input)
+
+            add_button = QPushButton("Add Project")
+            add_button.clicked.connect(self.add_project)
+            add_form_layout.addRow(add_button)
+
+            layout.addWidget(add_form_widget)
+        else:
+            layout.addWidget(QLabel("Viewing only - add functionality restricted to managers."))
+
     def load_artisans_data(self):
         """Load artisans from the database into the table."""
         artisans = self.db.get_artisans()
         self.artisans_table.setRowCount(len(artisans))
         for row, artisan in enumerate(artisans):
-            # artisan: (id, name, team_id, skill, availability, hourly_rate, contact_email, contact_phone)
             for col, value in enumerate(artisan):
                 if col == 6:  # Combine email and phone into one "Contact" column
                     contact = f"{artisan[6] or ''} / {artisan[7] or ''}".strip(" / ")
                     item = QTableWidgetItem(contact)
                 else:
                     item = QTableWidgetItem(str(value) if value is not None else "")
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # Make cells read-only
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.artisans_table.setItem(row, col if col < 6 else 6, item)
         self.artisans_table.resizeColumnsToContents()
+
+    def load_projects_data(self):
+        """Load projects from the database into the table."""
+        projects = self.db.get_projects()
+        self.projects_table.setRowCount(len(projects))
+        for row, project in enumerate(projects):
+            # project: (id, name, start_date, end_date, status, budget)
+            for col, value in enumerate(project[:-1]):  # Exclude budget for now
+                item = QTableWidgetItem(str(value) if value is not None else "")
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.projects_table.setItem(row, col, item)
+        self.projects_table.resizeColumnsToContents()
 
     def add_artisan(self):
         """Add a new artisan to the database."""
@@ -123,7 +171,6 @@ class MainWindow(QMainWindow):
         contact_email = self.contact_email_input.text().strip() or None
         contact_phone = self.contact_phone_input.text().strip() or None
 
-        # Basic input validation
         if not name or not skill or not availability:
             QMessageBox.warning(self, "Input Error", "Name, Skill, and Availability are required.")
             return
@@ -145,8 +192,46 @@ class MainWindow(QMainWindow):
             artisan_id = self.db.add_artisan(self.user_info['user_id'], name, team_id, skill, availability, 
                                             hourly_rate, contact_email, contact_phone)
             QMessageBox.information(self, "Success", f"Artisan {name} added with ID {artisan_id}.")
-            self.load_artisans_data()  # Refresh table
+            self.load_artisans_data()
             self.clear_add_form()
+        except ValueError as e:
+            QMessageBox.critical(self, "Error", str(e))
+
+    def add_project(self):
+        """Add a new project to the database."""
+        name = self.project_name_input.text().strip()
+        start_date = self.start_date_input.text().strip()
+        end_date = self.end_date_input.text().strip()
+        status = self.status_input.text().strip()
+        budget = self.budget_input.text().strip() or None
+
+        # Basic input validation
+        if not name or not start_date or not end_date or not status:
+            QMessageBox.warning(self, "Input Error", "Name, Start Date, End Date, and Status are required.")
+            return
+        if status not in ["Active", "Pending", "Completed", "Cancelled"]:
+            QMessageBox.warning(self, "Input Error", "Status must be Active, Pending, Completed, or Cancelled.")
+            return
+        if not (self.db.validate_date(start_date) and self.db.validate_date(end_date)):
+            QMessageBox.warning(self, "Input Error", "Dates must be in YYYY-MM-DD format.")
+            return
+        if not self.db.check_date_order(start_date, end_date):
+            QMessageBox.warning(self, "Input Error", "Start Date must be before or equal to End Date.")
+            return
+        try:
+            if budget:
+                budget = float(budget)
+                if budget < 0:
+                    raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "Input Error", "Budget must be a non-negative number.")
+            return
+
+        try:
+            project_id = self.db.add_project(self.user_info['user_id'], name, start_date, end_date, status, budget)
+            QMessageBox.information(self, "Success", f"Project {name} added with ID {project_id}.")
+            self.load_projects_data()
+            self.clear_project_form()
         except ValueError as e:
             QMessageBox.critical(self, "Error", str(e))
 
@@ -159,6 +244,14 @@ class MainWindow(QMainWindow):
         self.hourly_rate_input.clear()
         self.contact_email_input.clear()
         self.contact_phone_input.clear()
+
+    def clear_project_form(self):
+        """Clear the add project form fields."""
+        self.project_name_input.clear()
+        self.start_date_input.clear()
+        self.end_date_input.clear()
+        self.status_input.clear()
+        self.budget_input.clear()
 
     def logout(self):
         """Close the main window and return to login."""
