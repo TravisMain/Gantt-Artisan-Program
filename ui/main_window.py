@@ -46,8 +46,7 @@ class MainWindow(QMainWindow):
         # Audit Log tab (role-restricted)
         if self.user_info['role'] in ["Construction Manager", "Manager"]:
             audit_tab = QWidget()
-            audit_layout = QVBoxLayout(audit_tab)
-            audit_layout.addWidget(QLabel("Audit log placeholder"))
+            self.setup_audit_log_tab(audit_tab)
             tabs.addTab(audit_tab, "Audit Log")
 
         # Logout button
@@ -126,19 +125,15 @@ class MainWindow(QMainWindow):
     def setup_assignments_tab(self, tab):
         """Set up the Assignments tab with a table and add form."""
         layout = QVBoxLayout(tab)
-
-        # Table to display assignments
         self.assignments_table = QTableWidget()
         self.assignments_table.setColumnCount(6)
         self.assignments_table.setHorizontalHeaderLabels(["ID", "Artisan", "Project", "Start Date", "End Date", "Hours/Day"])
         self.load_assignments_data()
         layout.addWidget(self.assignments_table)
 
-        # Add assignment form (visible only to Construction Manager and Manager)
         if self.user_info['role'] in ["Construction Manager", "Manager"]:
             add_form_widget = QWidget()
             add_form_layout = QFormLayout(add_form_widget)
-
             self.artisan_combo = QComboBox()
             self.load_artisans_into_combo()
             self.project_combo = QComboBox()
@@ -158,10 +153,20 @@ class MainWindow(QMainWindow):
             add_button = QPushButton("Add Assignment")
             add_button.clicked.connect(self.add_assignment)
             add_form_layout.addRow(add_button)
-
             layout.addWidget(add_form_widget)
         else:
             layout.addWidget(QLabel("Viewing only - add functionality restricted to managers."))
+
+    def setup_audit_log_tab(self, tab):
+        """Set up the Audit Log tab with a read-only table."""
+        layout = QVBoxLayout(tab)
+
+        # Table to display audit logs
+        self.audit_table = QTableWidget()
+        self.audit_table.setColumnCount(5)
+        self.audit_table.setHorizontalHeaderLabels(["ID", "User ID", "Action", "Timestamp", "Details"])
+        self.load_audit_log_data()
+        layout.addWidget(self.audit_table)
 
     def load_artisans_data(self):
         """Load artisans from the database into the table."""
@@ -193,23 +198,34 @@ class MainWindow(QMainWindow):
         """Load assignments from the database into the table."""
         assignments = self.db.get_assignments()
         self.assignments_table.setRowCount(len(assignments))
-        artisans = {a[0]: a[1] for a in self.db.get_artisans()}  # Map ID to name
-        projects = {p[0]: p[1] for p in self.db.get_projects()}  # Map ID to name
+        artisans = {a[0]: a[1] for a in self.db.get_artisans()}
+        projects = {p[0]: p[1] for p in self.db.get_projects()}
         for row, assignment in enumerate(assignments):
-            # assignment: (id, artisan_id, project_id, start_date, end_date, hours_per_day, ...)
             values = [
-                str(assignment[0]),  # ID
-                artisans.get(assignment[1], str(assignment[1])),  # Artisan name or ID
-                projects.get(assignment[2], str(assignment[2])),  # Project name or ID
-                assignment[3],  # Start Date
-                assignment[4],  # End Date
-                str(assignment[5])  # Hours/Day
+                str(assignment[0]),
+                artisans.get(assignment[1], str(assignment[1])),
+                projects.get(assignment[2], str(assignment[2])),
+                assignment[3],
+                assignment[4],
+                str(assignment[5])
             ]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.assignments_table.setItem(row, col, item)
         self.assignments_table.resizeColumnsToContents()
+
+    def load_audit_log_data(self):
+        """Load audit logs from the database into the table."""
+        audit_logs = self.db.get_audit_logs()
+        self.audit_table.setRowCount(len(audit_logs))
+        for row, log in enumerate(audit_logs):
+            # log: (id, user_id, action, timestamp, details)
+            for col, value in enumerate(log):
+                item = QTableWidgetItem(str(value) if value is not None else "")
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.audit_table.setItem(row, col, item)
+        self.audit_table.resizeColumnsToContents()
 
     def load_artisans_into_combo(self):
         """Populate the artisan dropdown with names and IDs."""
