@@ -168,6 +168,23 @@ class MainWindow(QMainWindow):
 
     def setup_artisans_tab(self, tab):
         layout = QVBoxLayout(tab)
+
+        # Search and Filter
+        search_layout = QHBoxLayout()
+        self.artisan_search = QLineEdit()
+        self.artisan_search.setPlaceholderText("Search by Name or Skill...")
+        self.artisan_search.textChanged.connect(self.load_artisans_data)
+        search_layout.addWidget(QLabel("Search:"))
+        search_layout.addWidget(self.artisan_search)
+
+        self.artisan_filter = QComboBox()
+        self.artisan_filter.addItems(["All", "Full-time", "Part-time", "On-call"])
+        self.artisan_filter.currentTextChanged.connect(self.load_artisans_data)
+        search_layout.addWidget(QLabel("Filter Availability:"))
+        search_layout.addWidget(self.artisan_filter)
+        layout.addLayout(search_layout)
+
+        # Table
         self.artisans_table = QTableWidget()
         self.artisans_table.setColumnCount(7)
         self.artisans_table.setHorizontalHeaderLabels(["ID", "Name", "Team ID", "Skill", "Availability", "Hourly Rate", "Contact"])
@@ -211,6 +228,23 @@ class MainWindow(QMainWindow):
 
     def setup_projects_tab(self, tab):
         layout = QVBoxLayout(tab)
+
+        # Search and Filter
+        search_layout = QHBoxLayout()
+        self.project_search = QLineEdit()
+        self.project_search.setPlaceholderText("Search by Name...")
+        self.project_search.textChanged.connect(self.load_projects_data)
+        search_layout.addWidget(QLabel("Search:"))
+        search_layout.addWidget(self.project_search)
+
+        self.project_filter = QComboBox()
+        self.project_filter.addItems(["All", "Active", "Pending", "Completed", "Cancelled"])
+        self.project_filter.currentTextChanged.connect(self.load_projects_data)
+        search_layout.addWidget(QLabel("Filter Status:"))
+        search_layout.addWidget(self.project_filter)
+        layout.addLayout(search_layout)
+
+        # Table
         self.projects_table = QTableWidget()
         self.projects_table.setColumnCount(5)
         self.projects_table.setHorizontalHeaderLabels(["ID", "Name", "Start Date", "End Date", "Status"])
@@ -252,6 +286,23 @@ class MainWindow(QMainWindow):
 
     def setup_assignments_tab(self, tab):
         layout = QVBoxLayout(tab)
+
+        # Search and Filter
+        search_layout = QHBoxLayout()
+        self.assignment_search = QLineEdit()
+        self.assignment_search.setPlaceholderText("Search by Artisan or Project...")
+        self.assignment_search.textChanged.connect(self.load_assignments_data)
+        search_layout.addWidget(QLabel("Search:"))
+        search_layout.addWidget(self.assignment_search)
+
+        self.assignment_filter = QComboBox()
+        self.assignment_filter.addItems(["All", "Planned", "In Progress", "Completed", "Cancelled"])
+        self.assignment_filter.currentTextChanged.connect(self.load_assignments_data)
+        search_layout.addWidget(QLabel("Filter Status:"))
+        search_layout.addWidget(self.assignment_filter)
+        layout.addLayout(search_layout)
+
+        # Table
         self.assignments_table = QTableWidget()
         self.assignments_table.setColumnCount(6)
         self.assignments_table.setHorizontalHeaderLabels(["ID", "Artisan", "Project", "Start Date", "End Date", "Hours/Day"])
@@ -303,8 +354,17 @@ class MainWindow(QMainWindow):
 
     def load_artisans_data(self):
         artisans = self.db.get_artisans()
-        self.artisans_table.setRowCount(len(artisans))
-        for row, artisan in enumerate(artisans):
+        search_text = self.artisan_search.text().lower()
+        filter_text = self.artisan_filter.currentText()
+
+        filtered_artisans = []
+        for artisan in artisans:
+            if (search_text in artisan[1].lower() or search_text in artisan[3].lower()) and \
+               (filter_text == "All" or artisan[4] == filter_text):
+                filtered_artisans.append(artisan)
+
+        self.artisans_table.setRowCount(len(filtered_artisans))
+        for row, artisan in enumerate(filtered_artisans):
             for col, value in enumerate(artisan):
                 if col == 6:
                     contact = f"{artisan[6] or ''} / {artisan[7] or ''}".strip(" / ")
@@ -317,8 +377,17 @@ class MainWindow(QMainWindow):
 
     def load_projects_data(self):
         projects = self.db.get_projects()
-        self.projects_table.setRowCount(len(projects))
-        for row, project in enumerate(projects):
+        search_text = self.project_search.text().lower()
+        filter_text = self.project_filter.currentText()
+
+        filtered_projects = []
+        for project in projects:
+            if search_text in project[1].lower() and \
+               (filter_text == "All" or project[4] == filter_text):
+                filtered_projects.append(project)
+
+        self.projects_table.setRowCount(len(filtered_projects))
+        for row, project in enumerate(filtered_projects):
             for col, value in enumerate(project[:-1]):
                 item = QTableWidgetItem(str(value) if value is not None else "")
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -327,10 +396,21 @@ class MainWindow(QMainWindow):
 
     def load_assignments_data(self):
         assignments = self.db.get_assignments()
-        self.assignments_table.setRowCount(len(assignments))
+        search_text = self.assignment_search.text().lower()
+        filter_text = self.assignment_filter.currentText()
+
         artisans = {a[0]: a[1] for a in self.db.get_artisans()}
         projects = {p[0]: p[1] for p in self.db.get_projects()}
-        for row, assignment in enumerate(assignments):
+        filtered_assignments = []
+        for assignment in assignments:
+            artisan_name = artisans.get(assignment[1], str(assignment[1])).lower()
+            project_name = projects.get(assignment[2], str(assignment[2])).lower()
+            if (search_text in artisan_name or search_text in project_name) and \
+               (filter_text == "All" or assignment[8] == filter_text):  # Status is at index 8
+                filtered_assignments.append(assignment)
+
+        self.assignments_table.setRowCount(len(filtered_assignments))
+        for row, assignment in enumerate(filtered_assignments):
             values = [
                 str(assignment[0]),
                 artisans.get(assignment[1], str(assignment[1])),
