@@ -406,7 +406,7 @@ class MainWindow(QMainWindow):
             artisan_name = artisans.get(assignment[1], str(assignment[1])).lower()
             project_name = projects.get(assignment[2], str(assignment[2])).lower()
             if (search_text in artisan_name or search_text in project_name) and \
-               (filter_text == "All" or assignment[8] == filter_text):  # Status is at index 8
+               (filter_text == "All" or assignment[8] == filter_text):
                 filtered_assignments.append(assignment)
 
         self.assignments_table.setRowCount(len(filtered_assignments))
@@ -522,12 +522,17 @@ class MainWindow(QMainWindow):
             return
         artisan_id = int(self.artisans_table.item(selected, 0).text())
         name = self.artisans_table.item(selected, 1).text()
-        if QMessageBox.question(self, "Confirm Delete", f"Are you sure you want to delete {name}?",
+        assignments = self.db.cursor.execute("SELECT id FROM assignments WHERE artisan_id = ?", (artisan_id,)).fetchall()
+        msg = f"Are you sure you want to delete {name}?"
+        if assignments:
+            msg += f"\nThis will also delete {len(assignments)} associated assignment(s): {', '.join(str(a[0]) for a in assignments)}."
+        if QMessageBox.question(self, "Confirm Delete", msg,
                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
             try:
                 self.db.delete_artisan(self.user_info['user_id'], artisan_id)
-                QMessageBox.information(self, "Success", f"Artisan {name} deleted.")
+                QMessageBox.information(self, "Success", f"Artisan {name} and associated assignments deleted.")
                 self.load_artisans_data()
+                self.load_assignments_data()  # Refresh assignments tab
             except ValueError as e:
                 QMessageBox.critical(self, "Error", str(e))
 
@@ -611,12 +616,17 @@ class MainWindow(QMainWindow):
             return
         project_id = int(self.projects_table.item(selected, 0).text())
         name = self.projects_table.item(selected, 1).text()
-        if QMessageBox.question(self, "Confirm Delete", f"Are you sure you want to delete {name}?",
+        assignments = self.db.cursor.execute("SELECT id FROM assignments WHERE project_id = ?", (project_id,)).fetchall()
+        msg = f"Are you sure you want to delete {name}?"
+        if assignments:
+            msg += f"\nThis will also delete {len(assignments)} associated assignment(s): {', '.join(str(a[0]) for a in assignments)}."
+        if QMessageBox.question(self, "Confirm Delete", msg,
                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
             try:
                 self.db.delete_project(self.user_info['user_id'], project_id)
-                QMessageBox.information(self, "Success", f"Project {name} deleted.")
+                QMessageBox.information(self, "Success", f"Project {name} and associated assignments deleted.")
                 self.load_projects_data()
+                self.load_assignments_data()  # Refresh assignments tab
             except ValueError as e:
                 QMessageBox.critical(self, "Error", str(e))
 
