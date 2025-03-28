@@ -353,18 +353,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.audit_table)
 
     def load_artisans_data(self):
-        artisans = self.db.get_artisans()
-        search_text = self.artisan_search.text().lower()
+        search_text = self.artisan_search.text().strip()
         filter_text = self.artisan_filter.currentText()
+        artisans = self.db.get_artisans_filtered(search_text, filter_text)
 
-        filtered_artisans = []
-        for artisan in artisans:
-            if (search_text in artisan[1].lower() or search_text in artisan[3].lower()) and \
-               (filter_text == "All" or artisan[4] == filter_text):
-                filtered_artisans.append(artisan)
-
-        self.artisans_table.setRowCount(len(filtered_artisans))
-        for row, artisan in enumerate(filtered_artisans):
+        self.artisans_table.setRowCount(len(artisans))
+        for row, artisan in enumerate(artisans):
             for col, value in enumerate(artisan):
                 if col == 6:
                     contact = f"{artisan[6] or ''} / {artisan[7] or ''}".strip(" / ")
@@ -376,41 +370,27 @@ class MainWindow(QMainWindow):
         self.artisans_table.resizeColumnsToContents()
 
     def load_projects_data(self):
-        projects = self.db.get_projects()
-        search_text = self.project_search.text().lower()
+        search_text = self.project_search.text().strip()
         filter_text = self.project_filter.currentText()
+        projects = self.db.get_projects_filtered(search_text, filter_text)
 
-        filtered_projects = []
-        for project in projects:
-            if search_text in project[1].lower() and \
-               (filter_text == "All" or project[4] == filter_text):
-                filtered_projects.append(project)
-
-        self.projects_table.setRowCount(len(filtered_projects))
-        for row, project in enumerate(filtered_projects):
-            for col, value in enumerate(project[:-1]):
+        self.projects_table.setRowCount(len(projects))
+        for row, project in enumerate(projects):
+            for col, value in enumerate(project[:-1]):  # Exclude budget
                 item = QTableWidgetItem(str(value) if value is not None else "")
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.projects_table.setItem(row, col, item)
         self.projects_table.resizeColumnsToContents()
 
     def load_assignments_data(self):
-        assignments = self.db.get_assignments()
-        search_text = self.assignment_search.text().lower()
+        search_text = self.assignment_search.text().strip()
         filter_text = self.assignment_filter.currentText()
+        assignments = self.db.get_assignments_filtered(search_text, filter_text)
 
         artisans = {a[0]: a[1] for a in self.db.get_artisans()}
         projects = {p[0]: p[1] for p in self.db.get_projects()}
-        filtered_assignments = []
-        for assignment in assignments:
-            artisan_name = artisans.get(assignment[1], str(assignment[1])).lower()
-            project_name = projects.get(assignment[2], str(assignment[2])).lower()
-            if (search_text in artisan_name or search_text in project_name) and \
-               (filter_text == "All" or assignment[8] == filter_text):
-                filtered_assignments.append(assignment)
-
-        self.assignments_table.setRowCount(len(filtered_assignments))
-        for row, assignment in enumerate(filtered_assignments):
+        self.assignments_table.setRowCount(len(assignments))
+        for row, assignment in enumerate(assignments):
             values = [
                 str(assignment[0]),
                 artisans.get(assignment[1], str(assignment[1])),
@@ -532,7 +512,7 @@ class MainWindow(QMainWindow):
                 self.db.delete_artisan(self.user_info['user_id'], artisan_id)
                 QMessageBox.information(self, "Success", f"Artisan {name} and associated assignments deleted.")
                 self.load_artisans_data()
-                self.load_assignments_data()  # Refresh assignments tab
+                self.load_assignments_data()
             except ValueError as e:
                 QMessageBox.critical(self, "Error", str(e))
 
@@ -626,7 +606,7 @@ class MainWindow(QMainWindow):
                 self.db.delete_project(self.user_info['user_id'], project_id)
                 QMessageBox.information(self, "Success", f"Project {name} and associated assignments deleted.")
                 self.load_projects_data()
-                self.load_assignments_data()  # Refresh assignments tab
+                self.load_assignments_data()
             except ValueError as e:
                 QMessageBox.critical(self, "Error", str(e))
 

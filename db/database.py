@@ -194,6 +194,18 @@ class Database:
     def get_artisans(self):
         return self.cursor.execute("SELECT id, name, team_id, skill, availability, hourly_rate, contact_email, contact_phone FROM artisans").fetchall()
 
+    def get_artisans_filtered(self, search_text="", availability_filter="All"):
+        query = """
+            SELECT id, name, team_id, skill, availability, hourly_rate, contact_email, contact_phone 
+            FROM artisans 
+            WHERE (name LIKE ? OR skill LIKE ?)
+        """
+        params = [f"%{search_text}%", f"%{search_text}%"]
+        if availability_filter != "All":
+            query += " AND availability = ?"
+            params.append(availability_filter)
+        return self.cursor.execute(query, params).fetchall()
+
     def get_artisan_by_id(self, artisan_id):
         return self.cursor.execute("SELECT id, name, team_id, skill, availability, hourly_rate, contact_email, contact_phone FROM artisans WHERE id = ?", (artisan_id,)).fetchone()
 
@@ -287,6 +299,14 @@ class Database:
     def get_projects(self):
         return self.cursor.execute("SELECT id, name, start_date, end_date, status, budget FROM projects").fetchall()
 
+    def get_projects_filtered(self, search_text="", status_filter="All"):
+        query = "SELECT id, name, start_date, end_date, status, budget FROM projects WHERE name LIKE ?"
+        params = [f"%{search_text}%"]
+        if status_filter != "All":
+            query += " AND status = ?"
+            params.append(status_filter)
+        return self.cursor.execute(query, params).fetchall()
+
     def get_project_by_id(self, project_id):
         return self.cursor.execute("SELECT id, name, start_date, end_date, status, budget FROM projects WHERE id = ?", (project_id,)).fetchone()
 
@@ -339,6 +359,21 @@ class Database:
 
     def get_assignments(self):
         return self.cursor.execute("SELECT id, artisan_id, project_id, start_date, end_date, hours_per_day, completed_hours, notes, status, priority FROM assignments").fetchall()
+
+    def get_assignments_filtered(self, search_text="", status_filter="All"):
+        query = """
+            SELECT a.id, a.artisan_id, a.project_id, a.start_date, a.end_date, a.hours_per_day, 
+                   a.completed_hours, a.notes, a.status, a.priority
+            FROM assignments a
+            JOIN artisans art ON a.artisan_id = art.id
+            JOIN projects p ON a.project_id = p.id
+            WHERE (art.name LIKE ? OR p.name LIKE ?)
+        """
+        params = [f"%{search_text}%", f"%{search_text}%"]
+        if status_filter != "All":
+            query += " AND a.status = ?"
+            params.append(status_filter)
+        return self.cursor.execute(query, params).fetchall()
 
     def get_assignment_by_id(self, assignment_id):
         return self.cursor.execute("SELECT id, artisan_id, project_id, start_date, end_date, hours_per_day, completed_hours, notes, status, priority FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
