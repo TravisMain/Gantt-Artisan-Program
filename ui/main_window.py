@@ -4,6 +4,11 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QComboBox, QDialog, QDialogButtonBox)
 from PyQt6.QtCore import Qt
 from db.database import Database
+import csv
+import os
+from datetime import datetime
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 class EditArtisanDialog(QDialog):
     def __init__(self, artisan_data, parent=None):
@@ -128,7 +133,7 @@ class MainWindow(QMainWindow):
     def __init__(self, user_info, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Gantt Artisan Program - Main Dashboard")
-        self.setMinimumSize(600, 400)
+        self.setMinimumSize(800, 600)  # Increased size for Gantt chart
         self.user_info = user_info
         self.db = Database()
         self.init_ui()
@@ -142,25 +147,26 @@ class MainWindow(QMainWindow):
         welcome_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(welcome_label)
 
-        tabs = QTabWidget()
-        main_layout.addWidget(tabs)
+        self.tabs = QTabWidget()
+        self.tabs.setTabBarAutoHide(False)
+        main_layout.addWidget(self.tabs)
 
         artisans_tab = QWidget()
         self.setup_artisans_tab(artisans_tab)
-        tabs.addTab(artisans_tab, "Artisans")
+        self.tabs.addTab(artisans_tab, "Artisans")
 
         projects_tab = QWidget()
         self.setup_projects_tab(projects_tab)
-        tabs.addTab(projects_tab, "Projects")
+        self.tabs.addTab(projects_tab, "Projects")
 
         assignments_tab = QWidget()
         self.setup_assignments_tab(assignments_tab)
-        tabs.addTab(assignments_tab, "Assignments")
+        self.tabs.addTab(assignments_tab, "Assignments")
 
         if self.user_info['role'] in ["Construction Manager", "Manager"]:
             audit_tab = QWidget()
             self.setup_audit_log_tab(audit_tab)
-            tabs.addTab(audit_tab, "Audit Log")
+            self.tabs.addTab(audit_tab, "Audit Log")
 
         logout_button = QPushButton("Logout")
         logout_button.clicked.connect(self.logout)
@@ -182,6 +188,10 @@ class MainWindow(QMainWindow):
         self.artisan_filter.currentTextChanged.connect(self.load_artisans_data)
         search_layout.addWidget(QLabel("Filter Availability:"))
         search_layout.addWidget(self.artisan_filter)
+
+        export_button = QPushButton("Export to CSV")
+        export_button.clicked.connect(self.export_artisans)
+        search_layout.addWidget(export_button)
         layout.addLayout(search_layout)
 
         # Table
@@ -242,6 +252,10 @@ class MainWindow(QMainWindow):
         self.project_filter.currentTextChanged.connect(self.load_projects_data)
         search_layout.addWidget(QLabel("Filter Status:"))
         search_layout.addWidget(self.project_filter)
+
+        export_button = QPushButton("Export to CSV")
+        export_button.clicked.connect(self.export_projects)
+        search_layout.addWidget(export_button)
         layout.addLayout(search_layout)
 
         # Table
@@ -300,14 +314,22 @@ class MainWindow(QMainWindow):
         self.assignment_filter.currentTextChanged.connect(self.load_assignments_data)
         search_layout.addWidget(QLabel("Filter Status:"))
         search_layout.addWidget(self.assignment_filter)
+
+        export_button = QPushButton("Export to CSV")
+        export_button.clicked.connect(self.export_assignments)
+        search_layout.addWidget(export_button)
         layout.addLayout(search_layout)
 
         # Table
         self.assignments_table = QTableWidget()
         self.assignments_table.setColumnCount(6)
         self.assignments_table.setHorizontalHeaderLabels(["ID", "Artisan", "Project", "Start Date", "End Date", "Hours/Day"])
-        self.load_assignments_data()
         layout.addWidget(self.assignments_table)
+
+        # Gantt Chart
+        self.gantt_canvas = FigureCanvas(plt.Figure(figsize=(8, 4)))
+        layout.addWidget(self.gantt_canvas)
+        self.load_assignments_data()  # Loads table and Gantt
 
         if self.user_info['role'] in ["Construction Manager", "Manager"]:
             buttons_layout = QHBoxLayout()
@@ -405,6 +427,36 @@ class MainWindow(QMainWindow):
                 self.assignments_table.setItem(row, col, item)
         self.assignments_table.resizeColumnsToContents()
 
+        # Update Gantt Chart
+        self.update_gantt_chart(assignments, artisans, projects)
+
+    def update_gantt_chart(self, assignments, artisans, projects):
+        self.gantt_canvas.figure.clear()
+        ax = self.gantt_canvas.figure.add_subplot(111)
+        y_labels = []
+        y_pos = []
+        bars = []
+
+        for i, assignment in enumerate(assignments):
+            artisan_name = artisans.get(assignment[1], f"ID {assignment[1]}")
+            project_name = projects.get(assignment[2], f"ID {assignment[2]}")
+            label = f"{artisan_name} - {project_name}"
+            y_labels.append(label)
+            y_pos.append(i * 10)
+            start = datetime.strptime(assignment[3], "%Y-%m-%d")
+            end = datetime.strptime(assignment[4], "%Y-%m-%d")
+            duration = (end - start).days + 1
+            bars.append((start, duration))
+
+        ax.barh(y_pos, [b[1] for b in bars], left=[b[0].toordinal() for b in bars], height=8, align='center')
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(y_labels)
+        ax.set_xlabel("Date")
+        ax.set_title("Assignment Gantt Chart")
+        ax.xaxis_date()
+        self.gantt_canvas.figure.tight_layout()
+        self.gantt_canvas.draw()
+
     def load_audit_log_data(self):
         audit_logs = self.db.get_audit_logs()
         self.audit_table.setRowCount(len(audit_logs))
@@ -426,6 +478,36 @@ class MainWindow(QMainWindow):
         projects = self.db.get_projects()
         for project in projects:
             self.project_combo.addItem(f"{project[1]} (ID: {project[0]})", project[0])
+
+    def export_artisans(self):
+        artisans = self.db.get_artisans_filtered(self.artisan_search.text().strip(), self.artisan_filter.currentText())
+        filename = f"artisans_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        with open(filename, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["ID", "Name", "Team ID", "Skill", "Availability", "Hourly Rate", "Contact Email", "Contact Phone"])
+            for artisan in artisans:
+                writer.writerow(artisan)
+        QMessageBox.information(self, "Export Success", f"Artisans exported to {os.path.abspath(filename)}")
+
+    def export_projects(self):
+        projects = self.db.get_projects_filtered(self.project_search.text().strip(), self.project_filter.currentText())
+        filename = f"projects_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        with open(filename, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["ID", "Name", "Start Date", "End Date", "Status", "Budget"])
+            for project in projects:
+                writer.writerow(project)
+        QMessageBox.information(self, "Export Success", f"Projects exported to {os.path.abspath(filename)}")
+
+    def export_assignments(self):
+        assignments = self.db.get_assignments_filtered(self.assignment_search.text().strip(), self.assignment_filter.currentText())
+        filename = f"assignments_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        with open(filename, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["ID", "Artisan ID", "Project ID", "Start Date", "End Date", "Hours/Day", "Completed Hours", "Notes", "Status", "Priority"])
+            for assignment in assignments:
+                writer.writerow(assignment)
+        QMessageBox.information(self, "Export Success", f"Assignments exported to {os.path.abspath(filename)}")
 
     def add_artisan(self):
         name = self.name_input.text().strip()
