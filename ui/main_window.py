@@ -1,61 +1,172 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QTabWidget, QPushButton, QLabel, QTableWidget, 
-                             QTableWidgetItem, QLineEdit, QMessageBox, QFormLayout, QComboBox)
+                             QTableWidgetItem, QLineEdit, QMessageBox, QFormLayout, 
+                             QComboBox, QDialog, QDialogButtonBox)
 from PyQt6.QtCore import Qt
 from db.database import Database
+
+class EditArtisanDialog(QDialog):
+    def __init__(self, artisan_data, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Artisan")
+        self.artisan_data = artisan_data
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QFormLayout(self)
+        self.name_input = QLineEdit(self.artisan_data[1])
+        self.team_id_input = QLineEdit(str(self.artisan_data[2]) if self.artisan_data[2] else "")
+        self.skill_input = QLineEdit(self.artisan_data[3])
+        self.availability_input = QLineEdit(self.artisan_data[4])
+        self.hourly_rate_input = QLineEdit(str(self.artisan_data[5]) if self.artisan_data[5] else "")
+        self.email_input = QLineEdit(self.artisan_data[6] or "")
+        self.phone_input = QLineEdit(self.artisan_data[7] or "")
+
+        layout.addRow("Name:", self.name_input)
+        layout.addRow("Team ID:", self.team_id_input)
+        layout.addRow("Skill:", self.skill_input)
+        layout.addRow("Availability:", self.availability_input)
+        layout.addRow("Hourly Rate:", self.hourly_rate_input)
+        layout.addRow("Email:", self.email_input)
+        layout.addRow("Phone:", self.phone_input)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+    def get_data(self):
+        return {
+            "name": self.name_input.text().strip(),
+            "team_id": self.team_id_input.text().strip() or None,
+            "skill": self.skill_input.text().strip(),
+            "availability": self.availability_input.text().strip(),
+            "hourly_rate": self.hourly_rate_input.text().strip() or None,
+            "contact_email": self.email_input.text().strip() or None,
+            "contact_phone": self.phone_input.text().strip() or None
+        }
+
+class EditProjectDialog(QDialog):
+    def __init__(self, project_data, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Project")
+        self.project_data = project_data
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QFormLayout(self)
+        self.name_input = QLineEdit(self.project_data[1])
+        self.start_date_input = QLineEdit(self.project_data[2])
+        self.end_date_input = QLineEdit(self.project_data[3])
+        self.status_input = QLineEdit(self.project_data[4])
+        self.budget_input = QLineEdit(str(self.project_data[5]) if self.project_data[5] else "")
+
+        layout.addRow("Name:", self.name_input)
+        layout.addRow("Start Date:", self.start_date_input)
+        layout.addRow("End Date:", self.end_date_input)
+        layout.addRow("Status:", self.status_input)
+        layout.addRow("Budget:", self.budget_input)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+    def get_data(self):
+        return {
+            "name": self.name_input.text().strip(),
+            "start_date": self.start_date_input.text().strip(),
+            "end_date": self.end_date_input.text().strip(),
+            "status": self.status_input.text().strip(),
+            "budget": self.budget_input.text().strip() or None
+        }
+
+class EditAssignmentDialog(QDialog):
+    def __init__(self, assignment_data, artisans, projects, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Assignment")
+        self.assignment_data = assignment_data
+        self.artisans = artisans
+        self.projects = projects
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QFormLayout(self)
+        self.artisan_combo = QComboBox()
+        for artisan in self.artisans:
+            self.artisan_combo.addItem(f"{artisan[1]} (ID: {artisan[0]})", artisan[0])
+        self.artisan_combo.setCurrentIndex([a[0] for a in self.artisans].index(self.assignment_data[1]))
+        self.project_combo = QComboBox()
+        for project in self.projects:
+            self.project_combo.addItem(f"{project[1]} (ID: {project[0]})", project[0])
+        self.project_combo.setCurrentIndex([p[0] for p in self.projects].index(self.assignment_data[2]))
+        self.start_date_input = QLineEdit(self.assignment_data[3])
+        self.end_date_input = QLineEdit(self.assignment_data[4])
+        self.hours_per_day_input = QLineEdit(str(self.assignment_data[5]))
+
+        layout.addRow("Artisan:", self.artisan_combo)
+        layout.addRow("Project:", self.project_combo)
+        layout.addRow("Start Date:", self.start_date_input)
+        layout.addRow("End Date:", self.end_date_input)
+        layout.addRow("Hours/Day:", self.hours_per_day_input)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+    def get_data(self):
+        return {
+            "artisan_id": self.artisan_combo.currentData(),
+            "project_id": self.project_combo.currentData(),
+            "start_date": self.start_date_input.text().strip(),
+            "end_date": self.end_date_input.text().strip(),
+            "hours_per_day": self.hours_per_day_input.text().strip()
+        }
 
 class MainWindow(QMainWindow):
     def __init__(self, user_info, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Gantt Artisan Program - Main Dashboard")
         self.setMinimumSize(600, 400)
-        self.user_info = user_info  # Store user_id and role from login
+        self.user_info = user_info
         self.db = Database()
         self.init_ui()
 
     def init_ui(self):
-        """Set up the main window UI."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
-        # Welcome message
         welcome_label = QLabel(f"Welcome, User ID: {self.user_info['user_id']} | Role: {self.user_info['role']}")
         welcome_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(welcome_label)
 
-        # Tabbed interface
         tabs = QTabWidget()
         main_layout.addWidget(tabs)
 
-        # Artisans tab
         artisans_tab = QWidget()
         self.setup_artisans_tab(artisans_tab)
         tabs.addTab(artisans_tab, "Artisans")
 
-        # Projects tab
         projects_tab = QWidget()
         self.setup_projects_tab(projects_tab)
         tabs.addTab(projects_tab, "Projects")
 
-        # Assignments tab
         assignments_tab = QWidget()
         self.setup_assignments_tab(assignments_tab)
         tabs.addTab(assignments_tab, "Assignments")
 
-        # Audit Log tab (role-restricted)
         if self.user_info['role'] in ["Construction Manager", "Manager"]:
             audit_tab = QWidget()
             self.setup_audit_log_tab(audit_tab)
             tabs.addTab(audit_tab, "Audit Log")
 
-        # Logout button
         logout_button = QPushButton("Logout")
         logout_button.clicked.connect(self.logout)
         main_layout.addWidget(logout_button, alignment=Qt.AlignmentFlag.AlignRight)
 
     def setup_artisans_tab(self, tab):
-        """Set up the Artisans tab with a table and add form."""
         layout = QVBoxLayout(tab)
         self.artisans_table = QTableWidget()
         self.artisans_table.setColumnCount(7)
@@ -64,6 +175,15 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.artisans_table)
 
         if self.user_info['role'] in ["Construction Manager", "Manager"]:
+            buttons_layout = QHBoxLayout()
+            edit_button = QPushButton("Edit Selected")
+            edit_button.clicked.connect(self.edit_artisan)
+            delete_button = QPushButton("Delete Selected")
+            delete_button.clicked.connect(self.delete_artisan)
+            buttons_layout.addWidget(edit_button)
+            buttons_layout.addWidget(delete_button)
+            layout.addLayout(buttons_layout)
+
             add_form_widget = QWidget()
             add_form_layout = QFormLayout(add_form_widget)
             self.name_input = QLineEdit()
@@ -87,10 +207,9 @@ class MainWindow(QMainWindow):
             add_form_layout.addRow(add_button)
             layout.addWidget(add_form_widget)
         else:
-            layout.addWidget(QLabel("Viewing only - add functionality restricted to managers."))
+            layout.addWidget(QLabel("Viewing only - add/edit/delete restricted to managers."))
 
     def setup_projects_tab(self, tab):
-        """Set up the Projects tab with a table and add form."""
         layout = QVBoxLayout(tab)
         self.projects_table = QTableWidget()
         self.projects_table.setColumnCount(5)
@@ -99,6 +218,15 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.projects_table)
 
         if self.user_info['role'] in ["Construction Manager", "Manager"]:
+            buttons_layout = QHBoxLayout()
+            edit_button = QPushButton("Edit Selected")
+            edit_button.clicked.connect(self.edit_project)
+            delete_button = QPushButton("Delete Selected")
+            delete_button.clicked.connect(self.delete_project)
+            buttons_layout.addWidget(edit_button)
+            buttons_layout.addWidget(delete_button)
+            layout.addLayout(buttons_layout)
+
             add_form_widget = QWidget()
             add_form_layout = QFormLayout(add_form_widget)
             self.project_name_input = QLineEdit()
@@ -120,10 +248,9 @@ class MainWindow(QMainWindow):
             add_form_layout.addRow(add_button)
             layout.addWidget(add_form_widget)
         else:
-            layout.addWidget(QLabel("Viewing only - add functionality restricted to managers."))
+            layout.addWidget(QLabel("Viewing only - add/edit/delete restricted to managers."))
 
     def setup_assignments_tab(self, tab):
-        """Set up the Assignments tab with a table and add form."""
         layout = QVBoxLayout(tab)
         self.assignments_table = QTableWidget()
         self.assignments_table.setColumnCount(6)
@@ -132,6 +259,15 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.assignments_table)
 
         if self.user_info['role'] in ["Construction Manager", "Manager"]:
+            buttons_layout = QHBoxLayout()
+            edit_button = QPushButton("Edit Selected")
+            edit_button.clicked.connect(self.edit_assignment)
+            delete_button = QPushButton("Delete Selected")
+            delete_button.clicked.connect(self.delete_assignment)
+            buttons_layout.addWidget(edit_button)
+            buttons_layout.addWidget(delete_button)
+            layout.addLayout(buttons_layout)
+
             add_form_widget = QWidget()
             add_form_layout = QFormLayout(add_form_widget)
             self.artisan_combo = QComboBox()
@@ -155,13 +291,10 @@ class MainWindow(QMainWindow):
             add_form_layout.addRow(add_button)
             layout.addWidget(add_form_widget)
         else:
-            layout.addWidget(QLabel("Viewing only - add functionality restricted to managers."))
+            layout.addWidget(QLabel("Viewing only - add/edit/delete restricted to managers."))
 
     def setup_audit_log_tab(self, tab):
-        """Set up the Audit Log tab with a read-only table."""
         layout = QVBoxLayout(tab)
-
-        # Table to display audit logs
         self.audit_table = QTableWidget()
         self.audit_table.setColumnCount(5)
         self.audit_table.setHorizontalHeaderLabels(["ID", "User ID", "Action", "Timestamp", "Details"])
@@ -169,7 +302,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.audit_table)
 
     def load_artisans_data(self):
-        """Load artisans from the database into the table."""
         artisans = self.db.get_artisans()
         self.artisans_table.setRowCount(len(artisans))
         for row, artisan in enumerate(artisans):
@@ -184,18 +316,16 @@ class MainWindow(QMainWindow):
         self.artisans_table.resizeColumnsToContents()
 
     def load_projects_data(self):
-        """Load projects from the database into the table."""
         projects = self.db.get_projects()
         self.projects_table.setRowCount(len(projects))
         for row, project in enumerate(projects):
-            for col, value in enumerate(project[:-1]):  # Exclude budget
+            for col, value in enumerate(project[:-1]):
                 item = QTableWidgetItem(str(value) if value is not None else "")
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.projects_table.setItem(row, col, item)
         self.projects_table.resizeColumnsToContents()
 
     def load_assignments_data(self):
-        """Load assignments from the database into the table."""
         assignments = self.db.get_assignments()
         self.assignments_table.setRowCount(len(assignments))
         artisans = {a[0]: a[1] for a in self.db.get_artisans()}
@@ -216,11 +346,9 @@ class MainWindow(QMainWindow):
         self.assignments_table.resizeColumnsToContents()
 
     def load_audit_log_data(self):
-        """Load audit logs from the database into the table."""
         audit_logs = self.db.get_audit_logs()
         self.audit_table.setRowCount(len(audit_logs))
         for row, log in enumerate(audit_logs):
-            # log: (id, user_id, action, timestamp, details)
             for col, value in enumerate(log):
                 item = QTableWidgetItem(str(value) if value is not None else "")
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -228,21 +356,18 @@ class MainWindow(QMainWindow):
         self.audit_table.resizeColumnsToContents()
 
     def load_artisans_into_combo(self):
-        """Populate the artisan dropdown with names and IDs."""
         self.artisan_combo.clear()
         artisans = self.db.get_artisans()
         for artisan in artisans:
             self.artisan_combo.addItem(f"{artisan[1]} (ID: {artisan[0]})", artisan[0])
 
     def load_projects_into_combo(self):
-        """Populate the project dropdown with names and IDs."""
         self.project_combo.clear()
         projects = self.db.get_projects()
         for project in projects:
             self.project_combo.addItem(f"{project[1]} (ID: {project[0]})", project[0])
 
     def add_artisan(self):
-        """Add a new artisan to the database."""
         name = self.name_input.text().strip()
         team_id = self.team_id_input.text().strip() or None
         skill = self.skill_input.text().strip()
@@ -277,8 +402,56 @@ class MainWindow(QMainWindow):
         except ValueError as e:
             QMessageBox.critical(self, "Error", str(e))
 
+    def edit_artisan(self):
+        selected = self.artisans_table.currentRow()
+        if selected == -1:
+            QMessageBox.warning(self, "Selection Error", "Please select an artisan to edit.")
+            return
+        artisan_id = int(self.artisans_table.item(selected, 0).text())
+        artisan_data = self.db.get_artisan_by_id(artisan_id)
+        dialog = EditArtisanDialog(artisan_data, self)
+        if dialog.exec():
+            data = dialog.get_data()
+            if not data["name"] or not data["skill"] or not data["availability"]:
+                QMessageBox.warning(self, "Input Error", "Name, Skill, and Availability are required.")
+                return
+            if data["availability"] not in ["Full-time", "Part-time", "On-call"]:
+                QMessageBox.warning(self, "Input Error", "Availability must be Full-time, Part-time, or On-call.")
+                return
+            try:
+                if data["hourly_rate"]:
+                    data["hourly_rate"] = float(data["hourly_rate"])
+                    if data["hourly_rate"] < 0:
+                        raise ValueError
+                if data["team_id"]:
+                    data["team_id"] = int(data["team_id"])
+            except ValueError:
+                QMessageBox.warning(self, "Input Error", "Team ID must be an integer, Hourly Rate must be a non-negative number.")
+                return
+            try:
+                self.db.update_artisan(self.user_info['user_id'], artisan_id, **data)
+                QMessageBox.information(self, "Success", f"Artisan {data['name']} updated.")
+                self.load_artisans_data()
+            except ValueError as e:
+                QMessageBox.critical(self, "Error", str(e))
+
+    def delete_artisan(self):
+        selected = self.artisans_table.currentRow()
+        if selected == -1:
+            QMessageBox.warning(self, "Selection Error", "Please select an artisan to delete.")
+            return
+        artisan_id = int(self.artisans_table.item(selected, 0).text())
+        name = self.artisans_table.item(selected, 1).text()
+        if QMessageBox.question(self, "Confirm Delete", f"Are you sure you want to delete {name}?",
+                               QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            try:
+                self.db.delete_artisan(self.user_info['user_id'], artisan_id)
+                QMessageBox.information(self, "Success", f"Artisan {name} deleted.")
+                self.load_artisans_data()
+            except ValueError as e:
+                QMessageBox.critical(self, "Error", str(e))
+
     def add_project(self):
-        """Add a new project to the database."""
         name = self.project_name_input.text().strip()
         start_date = self.start_date_input.text().strip()
         end_date = self.end_date_input.text().strip()
@@ -314,8 +487,60 @@ class MainWindow(QMainWindow):
         except ValueError as e:
             QMessageBox.critical(self, "Error", str(e))
 
+    def edit_project(self):
+        selected = self.projects_table.currentRow()
+        if selected == -1:
+            QMessageBox.warning(self, "Selection Error", "Please select a project to edit.")
+            return
+        project_id = int(self.projects_table.item(selected, 0).text())
+        project_data = self.db.get_project_by_id(project_id)
+        dialog = EditProjectDialog(project_data, self)
+        if dialog.exec():
+            data = dialog.get_data()
+            if not data["name"] or not data["start_date"] or not data["end_date"] or not data["status"]:
+                QMessageBox.warning(self, "Input Error", "Name, Start Date, End Date, and Status are required.")
+                return
+            if data["status"] not in ["Active", "Pending", "Completed", "Cancelled"]:
+                QMessageBox.warning(self, "Input Error", "Status must be Active, Pending, Completed, or Cancelled.")
+                return
+            if not (self.db.validate_date(data["start_date"]) and self.db.validate_date(data["end_date"])):
+                QMessageBox.warning(self, "Input Error", "Dates must be in YYYY-MM-DD format.")
+                return
+            if not self.db.check_date_order(data["start_date"], data["end_date"]):
+                QMessageBox.warning(self, "Input Error", "Start Date must be before or equal to End Date.")
+                return
+            try:
+                if data["budget"]:
+                    data["budget"] = float(data["budget"])
+                    if data["budget"] < 0:
+                        raise ValueError
+            except ValueError:
+                QMessageBox.warning(self, "Input Error", "Budget must be a non-negative number.")
+                return
+            try:
+                self.db.update_project(self.user_info['user_id'], project_id, **data)
+                QMessageBox.information(self, "Success", f"Project {data['name']} updated.")
+                self.load_projects_data()
+            except ValueError as e:
+                QMessageBox.critical(self, "Error", str(e))
+
+    def delete_project(self):
+        selected = self.projects_table.currentRow()
+        if selected == -1:
+            QMessageBox.warning(self, "Selection Error", "Please select a project to delete.")
+            return
+        project_id = int(self.projects_table.item(selected, 0).text())
+        name = self.projects_table.item(selected, 1).text()
+        if QMessageBox.question(self, "Confirm Delete", f"Are you sure you want to delete {name}?",
+                               QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            try:
+                self.db.delete_project(self.user_info['user_id'], project_id)
+                QMessageBox.information(self, "Success", f"Project {name} deleted.")
+                self.load_projects_data()
+            except ValueError as e:
+                QMessageBox.critical(self, "Error", str(e))
+
     def add_assignment(self):
-        """Add a new assignment to the database."""
         artisan_id = self.artisan_combo.currentData()
         project_id = self.project_combo.currentData()
         start_date = self.assign_start_date_input.text().strip()
@@ -348,8 +573,55 @@ class MainWindow(QMainWindow):
         except ValueError as e:
             QMessageBox.critical(self, "Error", str(e))
 
+    def edit_assignment(self):
+        selected = self.assignments_table.currentRow()
+        if selected == -1:
+            QMessageBox.warning(self, "Selection Error", "Please select an assignment to edit.")
+            return
+        assignment_id = int(self.assignments_table.item(selected, 0).text())
+        assignment_data = self.db.get_assignment_by_id(assignment_id)
+        dialog = EditAssignmentDialog(assignment_data, self.db.get_artisans(), self.db.get_projects(), self)
+        if dialog.exec():
+            data = dialog.get_data()
+            if not data["start_date"] or not data["end_date"] or not data["hours_per_day"]:
+                QMessageBox.warning(self, "Input Error", "Start Date, End Date, and Hours/Day are required.")
+                return
+            if not (self.db.validate_date(data["start_date"]) and self.db.validate_date(data["end_date"])):
+                QMessageBox.warning(self, "Input Error", "Dates must be in YYYY-MM-DD format.")
+                return
+            if not self.db.check_date_order(data["start_date"], data["end_date"]):
+                QMessageBox.warning(self, "Input Error", "Start Date must be before or equal to End Date.")
+                return
+            try:
+                data["hours_per_day"] = float(data["hours_per_day"])
+                if not 1 <= data["hours_per_day"] <= 12:
+                    raise ValueError
+            except ValueError:
+                QMessageBox.warning(self, "Input Error", "Hours/Day must be a number between 1 and 12.")
+                return
+            try:
+                self.db.update_assignment(self.user_info['user_id'], assignment_id, **data)
+                QMessageBox.information(self, "Success", "Assignment updated.")
+                self.load_assignments_data()
+            except ValueError as e:
+                QMessageBox.critical(self, "Error", str(e))
+
+    def delete_assignment(self):
+        selected = self.assignments_table.currentRow()
+        if selected == -1:
+            QMessageBox.warning(self, "Selection Error", "Please select an assignment to delete.")
+            return
+        assignment_id = int(self.assignments_table.item(selected, 0).text())
+        if QMessageBox.question(self, "Confirm Delete", f"Are you sure you want to delete assignment ID {assignment_id}?",
+                               QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            try:
+                self.db.delete_assignment(self.user_info['user_id'], assignment_id)
+                QMessageBox.information(self, "Success", f"Assignment {assignment_id} deleted.")
+                self.load_assignments_data()
+            except ValueError as e:
+                QMessageBox.critical(self, "Error", str(e))
+
     def clear_add_form(self):
-        """Clear the add artisan form fields."""
         self.name_input.clear()
         self.team_id_input.clear()
         self.skill_input.clear()
@@ -359,7 +631,6 @@ class MainWindow(QMainWindow):
         self.contact_phone_input.clear()
 
     def clear_project_form(self):
-        """Clear the add project form fields."""
         self.project_name_input.clear()
         self.start_date_input.clear()
         self.end_date_input.clear()
@@ -367,13 +638,11 @@ class MainWindow(QMainWindow):
         self.budget_input.clear()
 
     def clear_assignment_form(self):
-        """Clear the add assignment form fields."""
         self.assign_start_date_input.clear()
         self.assign_end_date_input.clear()
         self.hours_per_day_input.clear()
 
     def logout(self):
-        """Close the main window and return to login."""
         self.db.close()
         self.close()
         from ui.login_window import LoginWindow
@@ -381,6 +650,5 @@ class MainWindow(QMainWindow):
         self.login_window.show()
 
     def closeEvent(self, event):
-        """Ensure database connection is closed when window is closed."""
         self.db.close()
         event.accept()
