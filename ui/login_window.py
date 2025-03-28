@@ -55,10 +55,12 @@ class LoginWindow(QMainWindow):
             QMessageBox.critical(self, "Login Failed", str(e))
 
     def open_main_window(self, user_info):
-        """Placeholder for opening the main window after login."""
+        """Open the main window after successful login."""
+        from ui.main_window import MainWindow
+        self.main_window = MainWindow(user_info)
+        self.main_window.show()
         self.db.close()
         self.close()
-        print(f"Logged in user: {user_info['user_id']}, Role: {user_info['role']}")
 
     def closeEvent(self, event):
         """Ensure database connection is closed when window is closed."""
